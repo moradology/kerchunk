@@ -3,7 +3,7 @@ import copy
 import itertools
 import fsspec.asyn
 from packaging.version import Version
-from typing import Any, cast
+from typing import Any, AsyncGenerator, cast
 import warnings
 
 import ujson
@@ -12,6 +12,9 @@ import fsspec
 import numpy as np
 import zarr
 
+async def consume_async_gen(async_gen: AsyncGenerator):
+    """Helper to enable synchronous evaluation via asyncio.run of async generators"""
+    return [item async for item in async_gen]
 
 def refs_as_fs(refs, remote_protocol=None, remote_options=None, **kwargs):
     """Convert a reference set to an fsspec filesystem"""
@@ -241,20 +244,14 @@ def encode_fill_value(v: Any, dtype: np.dtype, object_codec: Any = None) -> Any:
         return v
 
 
-def do_inline(store, threshold, remote_options=None, remote_protocol=None):
+def do_inline(refs, threshold, remote_options=None, remote_protocol=None):
     """Replace short chunks with the value of that chunk and inline metadata
 
     The chunk may need encoding with base64 if not ascii, so actual
     length may be larger than threshold.
     """
-    fs = fsspec.filesystem(
-        "reference",
-        fo=store,
-        remote_options=remote_options,
-        remote_protocol=remote_protocol,
-    )
     fs = refs_as_fs(
-        store, remote_protocol=remote_protocol, remote_options=remote_options
+        refs, remote_protocol=remote_protocol, remote_options=remote_options
     )
     out = fs.references.copy()
 

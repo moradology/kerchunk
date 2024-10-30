@@ -1,8 +1,12 @@
+import asyncio
 import fsspec
 from fsspec.implementations.reference import LazyReferenceMapper
 
 import kerchunk.utils
 
+from zarr.abc.store import Store as ZarrStore
+from zarr.core.buffer import default_buffer_prototype
+from zarr.storage import make_store_path
 
 def single_zarr(
     uri_or_store,
@@ -34,18 +38,32 @@ def single_zarr(
     reference dict like
     """
     if isinstance(uri_or_store, str):
-        mapper = fsspec.get_mapper(uri_or_store, **(storage_options or {}))
+        uri_or_store = fsspec.get_mapper(uri_or_store, **(storage_options or {}))
+
+    refs = out or {}
+    if isinstance(uri_or_store, ZarrStore):
+        # enable compatibility with zarr v3 Store instances
+        store = uri_or_store
+        keys = asyncio.run(kerchunk.utils.consume_async_gen(store.list()))
+        for k in keys:
+            if k.startswith("."):
+                refs[k] = asyncio.run(store.get(k, prototype=default_buffer_prototype()))
+            else:
+                refs[k] = [
+                    str(asyncio.run(
+                        make_store_path(store, path=k, storage_options=storage_options)
+                    ))
+                ]
     else:
         mapper = uri_or_store
         if isinstance(mapper, fsspec.FSMap) and storage_options is None:
             storage_options = mapper.fs.storage_options
+        for k in mapper:
+            if k.startswith("."):
+                refs[k] = mapper[k]
+            else:
+                refs[k] = [fsspec.utils._unstrip_protocol(mapper._key_to_str(k), mapper.fs)]
 
-    refs = out or {}
-    for k in mapper:
-        if k.startswith("."):
-            refs[k] = mapper[k]
-        else:
-            refs[k] = [fsspec.utils._unstrip_protocol(mapper._key_to_str(k), mapper.fs)]
     from kerchunk.utils import do_inline
 
     inline_threshold = inline or inline_threshold
