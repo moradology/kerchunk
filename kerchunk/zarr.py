@@ -54,6 +54,7 @@ def single_zarr(
     if isinstance(refs, LazyReferenceMapper):
         refs.flush()
     refs = kerchunk.utils.consolidate(refs)
+
     return refs
 
 

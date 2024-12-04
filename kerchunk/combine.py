@@ -203,10 +203,11 @@ class MultiZarrToZarr:
             target_options=target_options,
             asynchronous=True
         )
+        store = fs_as_store(fs)
         ds = xr.open_dataset(
-            fs.get_mapper(), engine="zarr", backend_kwargs={"consolidated": False}
+            store, engine="zarr", backend_kwargs={"consolidated": False}
         )
-        z = zarr.open(fs.get_mapper(), zarr_format=2)
+        z = zarr.open_group(store, zarr_format=2, use_consolidated=False)
         mzz = MultiZarrToZarr(
             path,
             out=fs.references,  # dict or parquet/lazy
@@ -373,8 +374,8 @@ class MultiZarrToZarr:
                 fs._dircache_from_items()
 
             logger.debug("First pass: %s", i)
-            z_store = fs_as_store(fs, read_only=False)
-            z = zarr.open_group(z_store, zarr_format=2)
+            z_store = fs_as_store(fs, read_only=True)
+            z = zarr.open_group(z_store, mode="r", zarr_format=2, use_consolidated=False)
             for var in self.concat_dims:
                 value = self._get_value(i, z, var, fn=self._paths[i])
                 if isinstance(value, np.ndarray):
@@ -399,11 +400,13 @@ class MultiZarrToZarr:
         """
         Write coordinate arrays into the output
         """
+        # group to write new refs to; backed by kv dict
         kv = {}
-        store = zarr.storage.MemoryStore(kv)
-        group = zarr.open_group(store, zarr_format=2)
-        m = fs_as_store(self.fss[0], read_only=False)
-        z = zarr.open(m, zarr_format=2)
+        store = zarr.storage.MemoryStore(store_dict=kv)
+        group = zarr.open_group(store, mode="w", zarr_format=2, use_consolidated=False)
+        # group to read coords from
+        m = fs_as_store(self.fss[0], read_only=True)
+        z = zarr.open_group(m, zarr_format=2, mode="r", use_consolidated=False)
         for k, v in self.coos.items():
             if k == "var":
                 # The names of the variables to write in the second pass, not a coordinate
@@ -454,6 +457,7 @@ class MultiZarrToZarr:
                 else:
                     arr.attrs.update(self.cf_units[k])
             # TODO: rewrite .zarray/.zattrs with ujson to save space. Maybe make them by hand anyway.
+        translate_refs_serializable(kv)
         self.out.update(kv)
         logger.debug("Written coordinates")
 
@@ -474,8 +478,8 @@ class MultiZarrToZarr:
 
         for i, fs in enumerate(self.fss):
             to_download = {}
-            m = fs_as_store(fs, read_only=False)
-            z = zarr.open(m, zarr_format=2)
+            m = fs_as_store(fs, read_only=True)
+            z = zarr.open_group(m, zarr_format=2, mode="r", use_consolidated=False)
 
             if no_deps is None:
                 # done first time only

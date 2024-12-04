@@ -48,7 +48,12 @@ def refs_as_store(
 
 def is_zarr3():
     """Check if the installed zarr version is version 3"""
-    return Version(zarr.__version__) >= Version("3.0.0.b2")
+    zarr_version = Version(zarr.__version__)
+    zarr_v3 = Version("3.0.0b2")
+    if zarr_version.is_prerelease:
+        return True
+    else:
+        return Version(zarr.__version__) >= zarr_v3
 
 
 def dict_to_store(store_dict: dict):
@@ -128,6 +133,7 @@ def consolidate(refs):
                 out[k] = (b"base64:" + base64.b64encode(v)).decode()
         else:
             out[k] = v
+        out = translate_refs_serializable(out)
     return {"version": 1, "refs": out}
 
 
