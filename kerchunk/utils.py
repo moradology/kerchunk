@@ -52,7 +52,7 @@ def refs_as_store(
 
 def is_zarr3():
     """Check if the installed zarr version is version 3"""
-    return Version(zarr.__version__) >= Version("3.0.0.b2")
+    return Version(zarr.__version__).major >= 3
 
 
 def dict_to_store(store_dict: dict):
